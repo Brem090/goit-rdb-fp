@@ -1,0 +1,205 @@
+___________________________________________________________________________
+___________________________________________________________________________
+
+1. Створення схеми pandemic та перегляд даних
+
+-- Запит 1_1: Створення схеми
+
+CREATE SCHEMA pandemic;
+
+USE pandemic;
+
+___________________________________________________________________________
+
+-- Запит 1_2: Огляд даних
+
+SELECT * FROM pandemic.infectious_cases;
+
+___________________________________________________________________________
+___________________________________________________________________________
+
+2. Нормалізація таблиці infectious_cases до 3ї нормальної форми
+
+-- Запит 2_1: Створення копії оригінальної таблиці
+
+CREATE TABLE infectious_cases_3NF AS
+SELECT * FROM infectious_cases;
+
+___________________________________________________________________________
+
+-- Запит 2_2: Створення таблиці для країн
+
+CREATE TABLE countries (
+    CountryID INT AUTO_INCREMENT PRIMARY KEY,
+    Entity VARCHAR(255) NOT NULL,
+    Code VARCHAR(10)
+);
+
+___________________________________________________________________________
+
+-- Запит 2_3: Додавання зовнішнього ключа у копію
+
+ALTER TABLE infectious_cases_3NF
+ADD COLUMN CountryID INT,
+ADD CONSTRAINT fk_country FOREIGN KEY (CountryID) REFERENCES countries(CountryID);
+
+___________________________________________________________________________
+
+-- Запит 2_4: Заповнення таблиці countries
+
+INSERT INTO countries (Entity, Code)
+SELECT DISTINCT Entity, Code FROM infectious_cases_3NF;
+
+___________________________________________________________________________
+
+-- Запит 2_5: Оновлення infectious_cases_3NF, додаючи CountryID
+
+UPDATE infectious_cases_3NF
+SET CountryID = (SELECT CountryID FROM countries WHERE infectious_cases_3NF.Entity = countries.Entity);
+
+___________________________________________________________________________
+
+-- Запит 2_6: Видалення колонок Entity і Code
+
+ALTER TABLE infectious_cases_3NF
+DROP COLUMN Entity,
+DROP COLUMN Code;
+
+___________________________________________________________________________
+
+-- Запит 2_7: Перегляд нормалізованої таблиці infectious_cases_3nf
+
+SELECT * FROM pandemic.infectious_cases_3nf;
+
+___________________________________________________________________________
+
+-- Запит 2_8: Перегляд таблиці countries
+
+SELECT * FROM pandemic.countries;
+
+___________________________________________________________________________
+___________________________________________________________________________
+
+3. Аналіз даних Number_rabies на NULL
+
+-- Запит 3_1: Заміна порожніх значень 
+
+UPDATE infectious_cases_3NF
+SET Number_rabies = NULL
+WHERE Number_rabies = '';
+
+___________________________________________________________________________
+
+-- Запит 3_2: Перетворення Number_rabies на числовий тип
+
+ALTER TABLE infectious_cases_3NF MODIFY COLUMN Number_rabies FLOAT;
+
+___________________________________________________________________________
+
+-- Запит 3_3: Аналіз даних
+
+SELECT 
+    c.Entity AS Country,
+    c.Code AS CountryCode,
+    AVG(ic.Number_rabies) AS AvgNumberRabies,
+    MIN(ic.Number_rabies) AS MinNumberRabies,
+    MAX(ic.Number_rabies) AS MaxNumberRabies,
+    SUM(ic.Number_rabies) AS SumNumberRabies
+FROM 
+    infectious_cases_3NF ic
+JOIN 
+    countries c ON ic.CountryID = c.CountryID
+WHERE 
+    ic.Number_rabies IS NOT NULL
+GROUP BY 
+    c.Entity, c.Code
+ORDER BY 
+    AvgNumberRabies DESC
+LIMIT 10;
+
+___________________________________________________________________________
+___________________________________________________________________________
+
+4. Створення колонки різниці в роках
+
+-- Запит 4_1: Створення дати у форматі YYYY-01-01
+
+ALTER TABLE infectious_cases_3NF
+ADD COLUMN StartOfYear DATE;
+
+UPDATE infectious_cases_3NF
+SET StartOfYear = STR_TO_DATE(CONCAT(Year, '-01-01'), '%Y-%m-%d');
+
+___________________________________________________________________________
+
+-- Запит 4_2: Додавання колонки для поточної дати
+
+ALTER TABLE infectious_cases_3NF
+ADD COLUMN CurrentDate DATE;
+
+UPDATE infectious_cases_3NF
+SET CurrentDate = CURRENT_DATE;
+
+___________________________________________________________________________
+
+-- Запит 4_3: Обчислення різниці в роках між двома датами
+
+ALTER TABLE infectious_cases_3NF
+ADD COLUMN YearDifference INT;
+
+UPDATE infectious_cases_3NF
+SET YearDifference = TIMESTAMPDIFF(YEAR, StartOfYear, CurrentDate);
+
+___________________________________________________________________________
+
+-- Запит 4_4: Перегляд результату
+
+SELECT Year, StartOfYear, CurrentDate, YearDifference
+FROM infectious_cases_3NF
+LIMIT 10;
+
+___________________________________________________________________________
+___________________________________________________________________________
+
+5. Створення власної функції
+
+
+-- Запит 5_1: Власна функція
+
+DELIMITER $$
+
+CREATE FUNCTION CalculateYearDifference(inputYear INT)
+RETURNS INT
+DETERMINISTIC
+BEGIN
+    DECLARE StartOfYear DATE;
+    DECLARE YearDifference INT;
+
+    -- Створення дати 1 січня відповідного року
+    SET StartOfYear = STR_TO_DATE(CONCAT(inputYear, '-01-01'), '%Y-%m-%d');
+    
+    -- Обчислення різниці в роках між датою і поточною датою
+    SET YearDifference = TIMESTAMPDIFF(YEAR, StartOfYear, CURRENT_DATE);
+
+    RETURN YearDifference;
+END$$
+
+DELIMITER ;
+
+___________________________________________________________________________
+
+-- Запит 5_2: Результат функції
+
+SELECT 
+    DISTINCT Year,
+    CalculateYearDifference(Year) AS YearDifference
+FROM 
+    infectious_cases_3NF
+ORDER BY 
+    Year ASC;
+
+
+
+
+
+
